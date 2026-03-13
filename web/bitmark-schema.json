@@ -1,0 +1,13 @@
+{
+  "title": "Bitmark Explorer",
+  "description": "Bitmark blockchain explorer and wallet configuration",
+  "type": "object",
+  "required": ["@type", "schema:name"],
+  "properties": {
+    "@id": { "type": "string", "title": "ID" },
+    "@type": { "type": "string", "title": "Type", "enum": ["schema:WebApplication"] },
+    "schema:name": { "type": "string", "title": "Name", "minLength": 1 },
+    "schema:description": { "type": "string", "title": "Description" },
+    "schema:url": { "type": "string", "title": "API Endpoint" }
+  }
+}

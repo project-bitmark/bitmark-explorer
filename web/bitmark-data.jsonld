@@ -1,0 +1,11 @@
+{
+  "@context": {
+    "schema": "https://schema.org/"
+  },
+  "$schema": "bitmark-schema.json",
+  "@id": "#this",
+  "@type": "schema:WebApplication",
+  "schema:name": "Bitmark Explorer",
+  "schema:description": "Explorer, wallet, and marking system for the Bitmark blockchain",
+  "schema:url": "https://bitmark.rocks"
+}

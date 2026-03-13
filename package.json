@@ -1,0 +1,25 @@
+{
+  "name": "bitmark-explorer",
+  "version": "0.0.1",
+  "description": "Bitmark blockchain explorer, wallet, and indexer — powered by JSS",
+  "type": "module",
+  "main": "src/plugin.js",
+  "bin": {
+    "bitmark-explorer": "./bin/bitmark-explorer.js"
+  },
+  "scripts": {
+    "start": "node bin/bitmark-explorer.js",
+    "dev": "node --watch bin/bitmark-explorer.js",
+    "index": "node bin/bitmark-explorer.js --index-only"
+  },
+  "dependencies": {
+    "@fastify/static": "^9.0.0",
+    "javascript-solid-server": "^0.0.107",
+    "mongodb": "^6.21.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT",
+  "devDependencies": {}
+}
