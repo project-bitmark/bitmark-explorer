@@ -1,4 +1,4 @@
-var API = ''
+var API = (function () { var m = location.pathname.match(/^(\/[^/]+)\//); return m ? m[1] : '' })()
 
 var secp256k1, sha256, ripemd160
 var cryptoLoaded = false
@@ -279,10 +279,10 @@ var MARK_TYPES = [
 ]
 
 var WEIGHTS = [
-  { label: 'Noted',     amount: 0.01, color: 'rgba(148,163,184,0.3)' },
-  { label: 'Nice',      amount: 0.05, color: 'rgba(99,102,241,0.3)' },
+  { label: 'Legendary', amount: 1.00, color: 'rgba(251,191,36,0.3)' },
   { label: 'Love it',   amount: 0.10, color: 'rgba(168,85,247,0.3)' },
-  { label: 'Legendary', amount: 1.00, color: 'rgba(251,191,36,0.3)' }
+  { label: 'Nice',      amount: 0.05, color: 'rgba(99,102,241,0.3)' },
+  { label: 'Noted',     amount: 0.01, color: 'rgba(148,163,184,0.3)' }
 ]
 
 export default {
@@ -297,7 +297,7 @@ export default {
 
   render (subject, store, container) {
     var selectedType = 0
-    var selectedWeight = 2
+    var selectedWeight = 0
 
     var style = document.createElement('style')
     style.textContent = [
@@ -618,11 +618,40 @@ export default {
           icon.textContent = mt ? mt.icon : '\u2696'
           item.appendChild(icon)
 
+          var amountBtm = mark.amount ? mark.amount / 1e8 : 0
+          var weightColor = 'rgba(255,255,255,0.35)'
+          var weightLabel = ''
+          var refSize = '0.85em'
+          if (amountBtm >= 1.0) {
+            weightColor = '#f59e0b'
+            weightLabel = 'Legendary'
+            refSize = '1.05em'
+          } else if (amountBtm >= 0.1) {
+            weightColor = '#a855f7'
+            weightLabel = 'Love it'
+            refSize = '0.95em'
+          } else if (amountBtm >= 0.05) {
+            weightColor = '#10b981'
+            weightLabel = 'Nice'
+          }
+
           var info = document.createElement('div')
           info.className = 'mk-mark-info'
           var ref = document.createElement('div')
           ref.className = 'mk-mark-ref'
-          ref.textContent = mark.reference || mark.reference_hash || mark.hash || '\u2014'
+          ref.style.fontSize = refSize
+          if (amountBtm >= 1.0) ref.style.color = 'rgba(255,255,255,0.9)'
+          var refText = mark.reference || mark.reference_hash || mark.hash || '\u2014'
+          if (mark.type === 1 && mark.reference) {
+            var link = document.createElement('a')
+            link.href = mark.reference
+            link.target = '_blank'
+            link.style.color = 'inherit'
+            link.textContent = refText
+            ref.appendChild(link)
+          } else {
+            ref.textContent = refText
+          }
           info.appendChild(ref)
           var meta = document.createElement('div')
           meta.className = 'mk-mark-meta'
@@ -630,10 +659,22 @@ export default {
           info.appendChild(meta)
           item.appendChild(info)
 
-          var amount = document.createElement('div')
-          amount.className = 'mk-mark-amount'
-          amount.textContent = mark.amount ? (mark.amount / 100000000).toFixed(2) + ' BTM' : ''
-          item.appendChild(amount)
+          var amountDiv = document.createElement('div')
+          amountDiv.style.textAlign = 'right'
+          amountDiv.style.whiteSpace = 'nowrap'
+          var amountText = document.createElement('div')
+          amountText.className = 'mk-mark-amount'
+          amountText.style.color = weightColor
+          amountText.style.fontSize = amountBtm >= 1.0 ? '1em' : '0.85em'
+          amountText.textContent = amountBtm ? amountBtm.toFixed(2) + ' BTM' : ''
+          amountDiv.appendChild(amountText)
+          if (weightLabel) {
+            var labelDiv = document.createElement('div')
+            labelDiv.style.cssText = 'font-size:0.7em;color:' + weightColor
+            labelDiv.textContent = weightLabel
+            amountDiv.appendChild(labelDiv)
+          }
+          item.appendChild(amountDiv)
 
           card.appendChild(item)
         })

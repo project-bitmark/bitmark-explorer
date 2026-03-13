@@ -1,4 +1,4 @@
-var API = ''
+var API = (function () { var m = location.pathname.match(/^(\/[^/]+)\//); return m ? m[1] : '' })()
 
 export default {
   label: 'Explorer',

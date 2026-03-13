@@ -1,4 +1,4 @@
-var API = ''
+var API = (function () { var m = location.pathname.match(/^(\/[^/]+)\//); return m ? m[1] : '' })()
 
 var secp256k1, sha256, ripemd160
 var cryptoLoaded = false
