@@ -50,4 +50,4 @@ node bin/bitmark-explorer.js --index-only --watch
 
 ## License
 
-MIT
+AGPL-3.0-or-later — Copyright (c) 2026 Project Bitmark
