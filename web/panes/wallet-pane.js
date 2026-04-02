@@ -47,6 +47,169 @@ function privkeyToAddress (hexKey) {
   return base58check(0x55, hash)
 }
 
+function bytesToHex (bytes) {
+  return Array.from(bytes).map(function (b) { return b.toString(16).padStart(2, '0') }).join('')
+}
+
+function base58Decode (str) {
+  var ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+  var bytes = [0]
+  for (var c = 0; c < str.length; c++) {
+    var value = ALPHABET.indexOf(str[c])
+    if (value < 0) throw new Error('Invalid Base58 character')
+    var carry = value
+    for (var i = 0; i < bytes.length; i++) {
+      carry += bytes[i] * 58
+      bytes[i] = carry & 0xff
+      carry >>= 8
+    }
+    while (carry > 0) { bytes.push(carry & 0xff); carry >>= 8 }
+  }
+  for (var j = 0; j < str.length && str[j] === '1'; j++) bytes.push(0)
+  return new Uint8Array(bytes.reverse())
+}
+
+function base58CheckDecode (str) {
+  var data = base58Decode(str)
+  var payload = data.slice(0, -4)
+  var checksum = data.slice(-4)
+  var expected = sha256(sha256(payload)).slice(0, 4)
+  for (var i = 0; i < 4; i++) {
+    if (checksum[i] !== expected[i]) throw new Error('Invalid checksum')
+  }
+  return { version: payload[0], payload: payload.slice(1) }
+}
+
+function encodeVarInt (n) {
+  if (n < 0xfd) return new Uint8Array([n])
+  if (n <= 0xffff) return new Uint8Array([0xfd, n & 0xff, (n >> 8) & 0xff])
+  return new Uint8Array([0xfe, n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >> 24) & 0xff])
+}
+
+function writeUInt32LE (n) {
+  var buf = new Uint8Array(4)
+  buf[0] = n & 0xff; buf[1] = (n >> 8) & 0xff; buf[2] = (n >> 16) & 0xff; buf[3] = (n >> 24) & 0xff
+  return buf
+}
+
+function writeUInt64LE (n) {
+  var buf = new Uint8Array(8)
+  buf[0] = n & 0xff; buf[1] = (n >> 8) & 0xff; buf[2] = (n >> 16) & 0xff; buf[3] = (n >> 24) & 0xff
+  var high = Math.floor(n / 0x100000000)
+  buf[4] = high & 0xff; buf[5] = (high >> 8) & 0xff; buf[6] = (high >> 16) & 0xff; buf[7] = (high >> 24) & 0xff
+  return buf
+}
+
+function reverseBytes (bytes) {
+  var copy = new Uint8Array(bytes.length)
+  copy.set(bytes)
+  return copy.reverse()
+}
+
+function concatBytes () {
+  var arrays = Array.from(arguments)
+  var total = arrays.reduce(function (s, a) { return s + a.length }, 0)
+  var result = new Uint8Array(total)
+  var offset = 0
+  for (var i = 0; i < arrays.length; i++) { result.set(arrays[i], offset); offset += arrays[i].length }
+  return result
+}
+
+function createP2PKHScriptPubKey (address) {
+  var decoded = base58CheckDecode(address)
+  var pubKeyHash = decoded.payload
+  var script = new Uint8Array(25)
+  script[0] = 0x76  // OP_DUP
+  script[1] = 0xa9  // OP_HASH160
+  script[2] = 0x14  // Push 20 bytes
+  script.set(pubKeyHash, 3)
+  script[23] = 0x88 // OP_EQUALVERIFY
+  script[24] = 0xac // OP_CHECKSIG
+  return script
+}
+
+function createP2PKHScriptSig (signature, publicKey) {
+  var sigLen = signature.length
+  var pubLen = publicKey.length
+  var script = new Uint8Array(1 + sigLen + 1 + pubLen)
+  script[0] = sigLen
+  script.set(signature, 1)
+  script[1 + sigLen] = pubLen
+  script.set(publicKey, 2 + sigLen)
+  return script
+}
+
+function serializeTx (tx, forSigning, inputIndex, prevScriptPubKey) {
+  var parts = []
+  parts.push(writeUInt32LE(tx.version || 1))
+  parts.push(encodeVarInt(tx.inputs.length))
+  for (var i = 0; i < tx.inputs.length; i++) {
+    var input = tx.inputs[i]
+    parts.push(reverseBytes(hexToBytes(input.txid)))
+    parts.push(writeUInt32LE(input.vout))
+    if (forSigning) {
+      if (i === inputIndex && prevScriptPubKey) {
+        parts.push(encodeVarInt(prevScriptPubKey.length))
+        parts.push(prevScriptPubKey)
+      } else {
+        parts.push(new Uint8Array([0x00]))
+      }
+    } else {
+      var scriptSig = input.scriptSig || new Uint8Array(0)
+      parts.push(encodeVarInt(scriptSig.length))
+      parts.push(scriptSig)
+    }
+    parts.push(writeUInt32LE(input.sequence !== undefined ? input.sequence : 0xffffffff))
+  }
+  parts.push(encodeVarInt(tx.outputs.length))
+  for (var j = 0; j < tx.outputs.length; j++) {
+    var output = tx.outputs[j]
+    parts.push(writeUInt64LE(output.value))
+    var spk = output.scriptPubKey || createP2PKHScriptPubKey(output.address)
+    parts.push(encodeVarInt(spk.length))
+    parts.push(spk)
+  }
+  parts.push(writeUInt32LE(tx.locktime || 0))
+  if (forSigning) parts.push(writeUInt32LE(0x01)) // SIGHASH_ALL
+  return concatBytes.apply(null, parts)
+}
+
+function hash256 (data) { return sha256(sha256(data)) }
+
+function signTxInput (tx, idx, privateKey, publicKey) {
+  var input = tx.inputs[idx]
+  var prevScript = createP2PKHScriptPubKey(input.address)
+  var serialized = serializeTx(tx, true, idx, prevScript)
+  var sigHash = hash256(serialized)
+  var privKeyBytes = hexToBytes(privateKey)
+  var signature = secp256k1.sign(sigHash, privKeyBytes, { lowS: true })
+  var derSig = signature.toDERRawBytes()
+  var sigWithType = new Uint8Array(derSig.length + 1)
+  sigWithType.set(derSig)
+  sigWithType[derSig.length] = 0x01 // SIGHASH_ALL
+  var pubKeyBytes = hexToBytes(publicKey)
+  return createP2PKHScriptSig(sigWithType, pubKeyBytes)
+}
+
+async function buildAndSignTx (selectedUtxos, outputs, privateKey, publicKey, fromAddress) {
+  var tx = {
+    version: 1,
+    inputs: selectedUtxos.map(function (u) {
+      return { txid: u.txid, vout: u.vout, value: u.value, address: fromAddress, sequence: 0xffffffff, scriptSig: null }
+    }),
+    outputs: outputs.map(function (o) {
+      return { value: o.value, address: o.address, scriptPubKey: createP2PKHScriptPubKey(o.address) }
+    }),
+    locktime: 0
+  }
+  for (var i = 0; i < tx.inputs.length; i++) {
+    tx.inputs[i].scriptSig = signTxInput(tx, i, privateKey, publicKey)
+  }
+  var rawTx = serializeTx(tx, false)
+  var txid = bytesToHex(reverseBytes(hash256(rawTx)))
+  return { hex: bytesToHex(rawTx), txid: txid }
+}
+
 function getNostrAccount () {
   try {
     var stored = localStorage.getItem('currentAccount')
@@ -482,13 +645,63 @@ export default {
       var sendBtn = document.createElement('button')
       sendBtn.className = 'wl-btn wl-btn-primary'
       sendBtn.textContent = 'Send Transaction'
-      sendBtn.addEventListener('click', function () {
+      sendBtn.addEventListener('click', async function () {
         var to = toInput.value.trim()
         var amount = btmToSats(amtInput.value)
         if (!to || !to.startsWith('b')) return toast('Invalid address', 'error')
         if (amount <= 0) return toast('Invalid amount', 'error')
         if (amount + 10000 > balance) return toast('Insufficient balance', 'error')
-        toast('Transaction signing requires crypto libraries. Coming soon!', 'error')
+        if (!wallet.encryptedKey) return toast('No private key available', 'error')
+
+        var ok = await loadCrypto()
+        if (!ok) return toast('Failed to load crypto libraries', 'error')
+
+        sendBtn.disabled = true
+        sendBtn.textContent = 'Building...'
+
+        try {
+          var fee = 10000
+          var addr = addresses[selectedAddr]
+
+          // Select UTXOs
+          var totalInput = 0
+          var selected = []
+          for (var i = 0; i < utxos.length; i++) {
+            selected.push(utxos[i])
+            totalInput += utxos[i].value
+            if (totalInput >= amount + fee) break
+          }
+          if (totalInput < amount + fee) throw new Error('Insufficient funds')
+
+          var change = totalInput - amount - fee
+          var outputs = [{ address: to, value: amount }]
+          if (change > 0) outputs.push({ address: addr, value: change })
+
+          var signedTx = await buildAndSignTx(selected, outputs, wallet.encryptedKey, wallet.publicKey, addr)
+
+          sendBtn.textContent = 'Broadcasting...'
+
+          var result = await fetch(API + '/tx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hex: signedTx.hex })
+          }).then(function (r) { return r.json() })
+
+          if (result.error) throw new Error(result.error)
+
+          toast('Sent! TXID: ' + (result.txid || signedTx.txid).slice(0, 16) + '...')
+          toInput.value = ''
+          amtInput.value = ''
+          setTimeout(async function () {
+            await refreshBalance()
+            renderTabContent()
+          }, 2000)
+        } catch (e) {
+          toast('Failed: ' + e.message, 'error')
+        } finally {
+          sendBtn.disabled = false
+          sendBtn.textContent = 'Send Transaction'
+        }
       })
       card.appendChild(sendBtn)
 
