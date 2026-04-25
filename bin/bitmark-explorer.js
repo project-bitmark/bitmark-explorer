@@ -41,6 +41,7 @@ if (indexOnly) {
   var server = createServer({
     logger: true,
     public: true,
+    readOnly: true, // viewer only — block POST/PUT/PATCH/DELETE on /web/
     root: ROOT,
     mongo: false // we manage our own MongoDB connection for blockchain data
   })
