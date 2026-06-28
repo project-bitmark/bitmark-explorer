@@ -17,6 +17,16 @@ async function loadCrypto () {
   } catch (e) { return false }
 }
 
+var QRCode
+async function loadQRCode () {
+  if (QRCode) return true
+  try {
+    var mod = await import('https://esm.sh/qrcode@1.5.3')
+    QRCode = mod.default || mod
+    return true
+  } catch (e) { return false }
+}
+
 function hexToBytes (hex) {
   var bytes = new Uint8Array(hex.length / 2)
   for (var i = 0; i < hex.length; i += 2) bytes[i / 2] = parseInt(hex.substr(i, 2), 16)
@@ -268,6 +278,7 @@ export default {
       '.wl-input::placeholder { color:rgba(255,255,255,0.2); }',
       '.wl-seed { font-family:"SF Mono",SFMono-Regular,Consolas,monospace; font-size:0.85em; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.03); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); word-break:break-all; line-height:1.8; margin-bottom:12px; }',
       '.wl-warning { font-size:0.8em; color:#fbbf24; margin-bottom:12px; }',
+      '.wl-qr { display:block; width:fit-content; padding:10px; background:#fff; border-radius:8px; margin-bottom:12px; line-height:0; }',
       '.wl-fee { font-size:0.8em; color:rgba(255,255,255,0.3); margin-bottom:12px; }',
       '.wl-hist-item { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.04); }',
       '.wl-hist-icon { font-size:1.2em; }',
@@ -596,6 +607,19 @@ export default {
       addrDiv.className = 'wl-addr'
       addrDiv.textContent = addr || 'No address'
       card.appendChild(addrDiv)
+
+      if (addr) {
+        var qrWrap = document.createElement('div')
+        qrWrap.className = 'wl-qr'
+        card.appendChild(qrWrap)
+        loadQRCode().then(function (ok) {
+          if (!ok) return
+          var canvas = document.createElement('canvas')
+          QRCode.toCanvas(canvas, addr, { width: 180, margin: 1 }, function (err) {
+            if (!err) qrWrap.appendChild(canvas)
+          })
+        })
+      }
 
       var copyBtn = document.createElement('button')
       copyBtn.className = 'wl-btn wl-btn-secondary'
