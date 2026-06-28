@@ -27,6 +27,16 @@ async function loadQRCode () {
   } catch (e) { return false }
 }
 
+var jsQR
+async function loadQRScanner () {
+  if (jsQR) return true
+  try {
+    var mod = await import('https://esm.sh/jsqr@1.4.0')
+    jsQR = mod.default || mod
+    return true
+  } catch (e) { return false }
+}
+
 function hexToBytes (hex) {
   var bytes = new Uint8Array(hex.length / 2)
   for (var i = 0; i < hex.length; i += 2) bytes[i / 2] = parseInt(hex.substr(i, 2), 16)
@@ -279,6 +289,7 @@ export default {
       '.wl-seed { font-family:"SF Mono",SFMono-Regular,Consolas,monospace; font-size:0.85em; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.03); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); word-break:break-all; line-height:1.8; margin-bottom:12px; }',
       '.wl-warning { font-size:0.8em; color:#fbbf24; margin-bottom:12px; }',
       '.wl-qr { display:block; width:fit-content; padding:10px; background:#fff; border-radius:8px; margin-bottom:12px; line-height:0; }',
+      '.wl-scan video { width:100%; max-width:280px; border-radius:8px; margin-bottom:12px; background:#000; display:block; }',
       '.wl-fee { font-size:0.8em; color:rgba(255,255,255,0.3); margin-bottom:12px; }',
       '.wl-hist-item { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.04); }',
       '.wl-hist-icon { font-size:1.2em; }',
@@ -644,6 +655,80 @@ export default {
       toInput.className = 'wl-input'
       toInput.placeholder = 'b...'
       card.appendChild(toInput)
+
+      var scanBtn = document.createElement('button')
+      scanBtn.className = 'wl-btn wl-btn-secondary'
+      scanBtn.style.marginBottom = '12px'
+      scanBtn.textContent = '📷 Scan QR'
+      card.appendChild(scanBtn)
+
+      var scanBox = document.createElement('div')
+      scanBox.className = 'wl-scan'
+      scanBox.style.display = 'none'
+      card.appendChild(scanBox)
+
+      scanBtn.addEventListener('click', async function () {
+        var ok = await loadQRScanner()
+        if (!ok) return toast('Failed to load QR scanner', 'error')
+        var stream
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        } catch (e) { return toast('Camera access denied', 'error') }
+
+        scanBtn.style.display = 'none'
+        scanBox.style.display = 'block'
+        scanBox.innerHTML = ''
+
+        var video = document.createElement('video')
+        video.setAttribute('playsinline', '')
+        video.muted = true
+        video.srcObject = stream
+        scanBox.appendChild(video)
+
+        var cancelBtn = document.createElement('button')
+        cancelBtn.className = 'wl-btn wl-btn-secondary'
+        cancelBtn.textContent = 'Cancel'
+        scanBox.appendChild(cancelBtn)
+
+        var canvas = document.createElement('canvas')
+        var ctx = canvas.getContext('2d')
+        var active = true
+
+        function stop () {
+          active = false
+          stream.getTracks().forEach(function (t) { t.stop() })
+          scanBox.style.display = 'none'
+          scanBox.innerHTML = ''
+          scanBtn.style.display = ''
+        }
+        cancelBtn.addEventListener('click', stop)
+
+        function tick () {
+          if (!active) return
+          if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth
+            canvas.height = video.videoHeight
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+            var img = ctx.getImageData(0, 0, canvas.width, canvas.height)
+            var code = jsQR(img.data, img.width, img.height)
+            if (code) {
+              // accept a bare address or a "bitmark:b...?amount=" URI
+              var text = code.data.trim().replace(/^[a-z]+:/i, '')
+              var parts = text.split('?')
+              toInput.value = parts[0]
+              if (parts[1]) {
+                var m = parts[1].match(/amount=([0-9.]+)/)
+                if (m) amtInput.value = m[1]
+              }
+              stop()
+              toast('Address scanned')
+              return
+            }
+          }
+          requestAnimationFrame(tick)
+        }
+        video.play().then(function () { requestAnimationFrame(tick) })
+      })
 
       var amtLabel = document.createElement('div')
       amtLabel.className = 'wl-label'
